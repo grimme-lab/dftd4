@@ -20,7 +20,7 @@ module dftd4_cutoff
    implicit none
    private
 
-   public :: realspace_cutoff, get_lattice_points
+   public :: realspace_cutoff, get_lattice_points, smooth_cutoff
 
 
    !> Coordination number cutoff
@@ -31,6 +31,12 @@ module dftd4_cutoff
 
    !> Three-body interaction cutoff
    real(wp), parameter :: disp3_default = 40.0_wp
+
+   !> Coefficients for the quintic smoothstep polynomial 10*x^3 - 15*x^4 + 6*x^5
+   real(wp), parameter :: smoothstep3 = 10.0_wp
+   real(wp), parameter :: smoothstep4 = -15.0_wp
+   real(wp), parameter :: smoothstep5 = 6.0_wp
+   real(wp), parameter :: smoothstep_deriv = 30.0_wp
 
 
    !> Collection of real space cutoffs
@@ -46,6 +52,12 @@ module dftd4_cutoff
       !> Three-body interaction cutoff
       real(wp) :: disp3 = disp3_default
 
+      !> Width of smooth two-body interaction cutoff
+      real(wp) :: width2 = 0.0_wp
+
+      !> Width of smooth three-body interaction cutoff
+      real(wp) :: width3 = 0.0_wp
+
    end type realspace_cutoff
 
 
@@ -56,6 +68,50 @@ module dftd4_cutoff
 
 
 contains
+
+
+!> Smooth polynomial switch for realspace cutoffs
+pure subroutine smooth_cutoff(r, cutoff, width, sw, dswdr)
+
+   !> Interatomic distance
+   real(wp), intent(in) :: r
+
+   !> Real space cutoff
+   real(wp), intent(in) :: cutoff
+
+   !> Width of smooth cutoff
+   real(wp), intent(in) :: width
+
+   !> Switching function value
+   real(wp), intent(out) :: sw
+
+   !> Derivative of the switching function with respect to distance
+   real(wp), intent(out) :: dswdr
+
+   real(wp) :: inner, effective_width, x
+
+   if (width <= 0.0_wp .or. cutoff <= 0.0_wp) then
+      sw = 1.0_wp
+      dswdr = 0.0_wp
+   else
+      ! Keep the switching interval within the physical range 0 <= r <= cutoff.
+      effective_width = min(width, cutoff)
+      inner = cutoff - effective_width
+      if (r <= inner) then
+         sw = 1.0_wp
+         dswdr = 0.0_wp
+      else if (r >= cutoff) then
+         sw = 0.0_wp
+         dswdr = 0.0_wp
+      else
+         x = (cutoff - r) / effective_width
+         ! Quintic Hermite switch with zero first derivatives at both boundaries.
+         sw = x**3 * (smoothstep3 + x*(smoothstep4 + smoothstep5*x))
+         dswdr = -smoothstep_deriv * x**2 * (1.0_wp - x)**2 / effective_width
+      end if
+   end if
+
+end subroutine smooth_cutoff
 
 
 !> Generate lattice points from repeatitions
